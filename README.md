@@ -2,7 +2,7 @@
 
 跨平台托盘应用，通过隔离的 OpenCode 为 WorkBuddy 提供免费模型。使用 Electron 共用界面和现有 Node.js 代理核心。
 
-> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.8 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
+> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.9 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
 
 ## 界面预览
 
@@ -16,8 +16,8 @@
 
 | 系统 | 验证状态 | 下载 |
 |---|---|---|
-| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.8 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.8/OW-Bridge-0.2.8-win-x64-portable.zip) |
-| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，v0.2.4 修复签名完整性 | [v0.2.4 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.4/OW-Bridge-0.2.4-mac-arm64.zip) |
+| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.9 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.9/OW-Bridge-0.2.9-win-x64-portable.zip) |
+| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，ZIP 签名完整性检查通过 | [v0.2.9 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.9/OW-Bridge-0.2.9-mac-arm64.zip) |
 | Windows ARM64 | 未正式测试，旧版 | [v0.2.2 ARM64 安装程序](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-win-arm64.exe) |
 | Linux x64 | 实验性，未正式测试，旧版 | [v0.2.2 AppImage](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-linux-x86_64.AppImage) |
 
@@ -25,8 +25,8 @@
 
 ## 使用
 
-- macOS：解压 `OW-Bridge-0.2.4-mac-arm64.zip`，双击 OW Bridge.app。
-- **Windows x64：完整解压 `OW-Bridge-0.2.8-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
+- macOS：解压 `OW-Bridge-0.2.9-mac-arm64.zip`，双击 OW Bridge.app。
+- **Windows x64：完整解压 `OW-Bridge-0.2.9-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
 - 首次启动自动准备 OpenCode、扫描免费模型、检测可用性；找到有效 WorkBuddy 配置后自动导入。
 - macOS 保持使用 `~/.workbuddy/models.json`。Windows 自动识别默认配置、已保存位置和 WorkBuddy 配置目录环境变量。常规路径找不到时，模型检测后自动用独立 OpenCode 只读会话搜索 `models.json`；有效候选自动记住并导入；找到多个时，选择查找校验前最后访问时间最新的一份，不再弹窗选择。也可从 Windows 托盘“自动查找 WorkBuddy 配置…”重新查找，或“选择 WorkBuddy 配置…”手动指定；首次使用请先在 WorkBuddy 保存一个自定义模型。Windows 托盘菜单“选择 WorkBuddy 配置…”可更换位置，切换时清理旧文件中的本应用条目。不会在猜测的位置新建模型配置。
 - 后续重新扫描或检测不会改 WorkBuddy；点击“导入 WorkBuddy”更新，界面会反馈结果。
@@ -91,6 +91,14 @@ Windows 首次启动默认读取系统 HTTP/HTTPS 代理，没有可用配置时
 
 ## 验证
 
-`npm test` 覆盖协议校验、导入与退出清理、目录能力映射、图片转发、推理档位和系统代理解析。**Windows x64 portable 已由用户在 Windows 实机验证**，Windows Codex 记录包含核心服务、Electron 启动、模型扫描、隔离配置导入和 5 个模型真实 API 请求成功；v0.2.8 自动测试 104 项通过、0 跳过。这里不承诺所有模型或复杂工作流均稳定。macOS 有既有实际使用验证；Windows ARM64、Linux 仍未正式测试。产物未做商用发布签名/公证。
+`npm test` 覆盖协议校验、导入与退出清理、目录能力映射、图片转发、推理档位和系统代理解析。**Windows x64 portable 已由用户在 Windows 实机验证**，Windows Codex 记录包含核心服务、Electron 启动、模型扫描、隔离配置导入和 5 个模型真实 API 请求成功；v0.2.9 自动测试 105 项通过、0 跳过。这里不承诺所有模型或复杂工作流均稳定。macOS 有既有实际使用验证；Windows ARM64、Linux 仍未正式测试。产物未做商用发布签名/公证。
 
 自动查找额外通过本地目录枚举补齐 OpenCode glob 可能漏掉的 `.workbuddy` 隐藏目录，并与模型找到的候选合并。自动查找只允许目录和文件名搜索，配置内容由本地程序验证，不交给模型。依赖可用的免费模型；查找失败仍可手动选择。已有有效旧文件时不会判断其是否已被 WorkBuddy 弃用，请通过托盘重新查找。详见 [配置查找说明](docs/config-finder.md)。
+
+### v0.2.9：启动恢复与选择性导入
+
+服务在启动最初就绑定本地端口，由操作系统保证独占，`service.pid` 仅记录当前进程。异常退出后遗留的 PID 或被其他程序复用的 PID 不再阻止启动；真实端口冲突仍会报错，不会结束占用端口的其他程序。
+
+控制面板模型行增加导入勾选框。默认勾选可用模型；选择会保存，之后启动自动导入及托盘导入沿用选择。更改勾选不立即修改 WorkBuddy，点击“导入 WorkBuddy”后应用；全不选再导入仅清除本应用模型，保留手动配置。检测失败的模型不会导入。
+
+本机与 Windows 各 105 项自动测试通过，Windows 免安装包另通过启动/强杀恢复/端口冲突/选择导入的流程测试。界面点击与导入反馈通过浏览器隔离接口测试；模型推理沿用此前实现，本轮未重新测试所有真实模型。

@@ -18,9 +18,10 @@ async function readBody(req) {
 }
 function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); }
 
-export function createServer({ key, backend, getModels, refresh, importModels, findConfig, setSystemProxy, probe, status, onResult = () => {}, onActivity }) {
+export function createServer({ server = http.createServer(), key, selectModel, backend, getModels, refresh, importModels, findConfig, setSystemProxy, probe, status, onResult = () => {}, onActivity }) {
   const active = new Set();
-  const server = http.createServer(async (req, res) => {
+  server.removeAllListeners('request');
+  server.on('request', async (req, res) => {
     if (!authorized(req, key)) return json(res, 401, { error: { message: 'Local proxy API key required', type: 'authentication_error' } });
     // No browser origins are allowed. WorkBuddy talks to this service through its native runtime.
     if (req.headers.origin) return json(res, 403, { error: { message: 'Browser-origin requests are disabled' } });
@@ -37,6 +38,10 @@ export function createServer({ key, backend, getModels, refresh, importModels, f
       }
       if (req.method === 'POST' && route === '/admin/system-proxy') return json(res, 200, await setSystemProxy((await readBody(req)).enabled));
       if (req.method === 'POST' && route === '/admin/find-config') return json(res, 200, await findConfig());
+      if (req.method === 'POST' && route === '/admin/selection') {
+        const body = await readBody(req);
+        return json(res, 200, await selectModel(body.model, body.selected));
+      }
       if (req.method === 'POST' && route === '/admin/import') return json(res, 200, await importModels((await readBody(req)).modelsFile));
       if (req.method === 'POST' && route === '/admin/refresh') return json(res, 200, await refresh());
       if (req.method !== 'POST' || route !== '/v1/chat/completions') return json(res, 404, { error: { message: 'Not found' } });

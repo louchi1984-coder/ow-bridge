@@ -18,15 +18,23 @@ function timing(id) {
   return `最近${r.source === 'probe' ? '检测' : '调用'} · ${r.ok ? '响应' : '失败'}耗时 ${duration}`;
 }
 function renderModels() {
-  const signature = JSON.stringify([state.models, state.modelResults, state.probe, state.availableModels, state.activity, selected]);
+  const signature = JSON.stringify([state.models, state.modelResults, state.probe, state.availableModels, state.activity, state.excludedModels, state.actionBusy, pendingAction, selected]);
   if (signature === lastModels) return; lastModels = signature;
   const scroll = $('models').scrollTop;
   const focused = document.activeElement?.dataset?.model;
   $('models').replaceChildren();
   const models = [...(state.models || [])].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   for (const model of models) {
-    const row = element('button', 'model' + (selected === model.id ? ' selected' : '')); row.dataset.model = model.id;
-    row.setAttribute('aria-expanded', String(selected === model.id));
+    const row = element('div', 'model' + (selected === model.id ? ' selected' : '')); row.dataset.model = model.id;
+    const choose = element('input', 'model-check'); choose.type = 'checkbox';
+    choose.checked = !!state.availableModels?.includes(model.id) && !(state.excludedModels || []).includes(model.id);
+    choose.disabled = !!(pendingAction || state.actionBusy || state.probe?.running || state.configSearch?.running || state.phase !== 'ready' || !state.availableModels?.includes(model.id));
+    choose.setAttribute('aria-label', `导入 OC · ${model.name}`);
+    choose.onclick = event => event.stopPropagation();
+    choose.onchange = () => run('selection', { model: model.id, selected: choose.checked });
+    const details = element('button', 'model-details');
+    details.setAttribute('aria-label', `查看 OC · ${model.name} 详情`);
+    details.setAttribute('aria-expanded', String(selected === model.id));
     const icon = element('span', 'model-icon'); icon.setAttribute('aria-hidden', 'true');
     icon.append(waiting(model.id) ? element('span', 'spinner') : element('span', '', '◇'));
     const info = element('div', 'model-info'); info.append(element('div', 'model-name', `OC · ${model.name}`), element('div', 'duration', timing(model.id)));
@@ -34,7 +42,7 @@ function renderModels() {
     if (model.reasoning) badges.append(element('span', 'badge reasoning', '推理'));
     if (model.images) badges.append(element('span', 'badge images', '图片'));
     const status = label(model); badges.append(element('span', 'badge ' + (rank(model) === 2 ? 'unavailable' : rank(model) === 1 ? 'waiting' : ''), status));
-    row.append(icon, info, badges); row.onclick = () => { selected = selected === model.id ? null : model.id; renderModels(); renderDetails(); };
+    details.append(icon, info, badges); row.append(choose, details); details.onclick = () => { selected = selected === model.id ? null : model.id; renderModels(); renderDetails(); };
     $('models').append(row);
     if (focused === model.id) row.focus({ preventScroll: true });
   }
@@ -85,6 +93,7 @@ async function run(name, value) {
   try {
     const response = await window.buddy.action(name, value);
     if (!response.ok) throw new Error(response.error);
+    if (name === 'selection') { state.excludedModels = response.result.excludedModels; feedback('选择已保存，点击导入 WorkBuddy 后生效。'); }
     if (name === 'import') {
       const r = response.result;
       if (r.canceled) { feedback('已取消导入，配置未更改。'); return; }

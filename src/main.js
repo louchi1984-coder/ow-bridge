@@ -8,6 +8,7 @@ import { dataDirectory } from './platform.js';
 import { randomBytes } from 'node:crypto';
 import { findRuntime, startBackend } from './runtime.js';
 import { createServer } from './server.js';
+import { listenService } from './service-instance.js';
 import { systemProxyEnvironment } from './system-proxy.js';
 import { prepare, BridgeError } from './protocol.js';
 import { PROBE_TIMEOUT, probeBody, probeModel, probeFailure, formatUnsupported } from './probe.js';
@@ -19,13 +20,8 @@ const port = Number(process.env.BUDDY_PORT || 41980);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid BUDDY_PORT');
 await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
 const lockFile = path.join(dataDir, 'service.pid');
-try {
-  const pid = Number(await fs.readFile(lockFile, 'utf8'));
-  try { process.kill(pid, 0); console.error('OW Bridge is already running'); process.exit(2); }
-  catch (e) { if (e.code !== 'ESRCH') throw e; }
-  await fs.unlink(lockFile);
-} catch (e) { if (e.code !== 'ENOENT') throw e; }
-await fs.writeFile(lockFile, String(process.pid), { flag: 'wx', mode: 0o600 });
+let server = await listenService(port);
+await fs.writeFile(lockFile, String(process.pid), { mode: 0o600 });
 const tokenFile = path.join(dataDir, 'api-key');
 let key;
 try { key = (await fs.readFile(tokenFile, 'utf8')).trim(); }
@@ -34,10 +30,10 @@ const settingsFile = path.join(dataDir, 'settings.json');
 let settings = {};
 try { settings = JSON.parse(await fs.readFile(settingsFile, 'utf8')); } catch {}
 const endpoint = `http://127.0.0.1:${port}/v1`;
-let models = [], server, runtime, binary, stopping = false, refreshing;
+let models = [], runtime, binary, stopping = false, refreshing;
 let previous = {};
 try { previous = JSON.parse(await fs.readFile(path.join(dataDir, 'status.json'), 'utf8')); } catch {}
-let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], modelResults: previous.modelResults || {}, sync: null, availableModels: [], probe: { running: false } };
+let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], excludedModels: settings.excludedModels || [], modelResults: previous.modelResults || {}, sync: null, availableModels: [], probe: { running: false } };
 // Serialize status writes so an older async update cannot overwrite a newer state.
 let statusWrites = Promise.resolve();
 function update(patch) {
@@ -67,7 +63,7 @@ let modelsFile = process.platform === 'win32'
   : process.env.BUDDY_MODELS_FILE || path.join(os.homedir(), '.workbuddy/models.json');
 update({ modelsFile });
 
-function syncPublished(published = publishedModels()) {
+function syncPublished(published = publishedModels().filter(m => !(settings.excludedModels || []).includes(m.id))) {
   syncWrites = syncWrites.then(async () => {
     let sync;
     if (process.env.BUDDY_NO_SYNC === '1') sync = { skipped: true, count: published.length };
@@ -260,6 +256,17 @@ async function findConfig(afterProbe = false) {
   try { return await configSearch; } finally { configSearch = null; }
 }
 
+async function selectModel(model, selected) {
+  if (stopping || probing || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待检测完成后选择模型');
+  if (typeof selected !== 'boolean' || !models.some(m => m.id === model)) throw new Error('无效的模型选择');
+  const excluded = new Set(settings.excludedModels || []);
+  if (selected) excluded.delete(model); else excluded.add(model);
+  const next = { ...settings, excludedModels: [...excluded] };
+  await atomicWrite(settingsFile, JSON.stringify(next));
+  settings = next; update({ excludedModels: next.excludedModels });
+  return { excludedModels: next.excludedModels };
+}
+
 async function importModels(selectedFile) {
   if (stopping || probing || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待读取和检测完成后导入');
   if (selectedFile !== undefined) {
@@ -281,7 +288,9 @@ async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   probeAbort.abort();
-  server?.abortAll(); server?.closeAllConnections(); server?.close();
+  server?.abortAll?.(); server?.closeAllConnections();
+  server?.removeAllListeners('request');
+  server?.on('request', (_req, res) => { res.writeHead(503); res.end(); });
   await syncPublished([]);
   await runtime?.stop();
   await refreshing?.catch(() => {});
@@ -290,6 +299,7 @@ async function shutdown(code = 0) {
   await syncWrites;
   await statusWrites;
   log.end(); await fs.unlink(lockFile).catch(() => {});
+  server?.close();
   process.exit(code);
 }
 process.on('message', message => { if (message === 'shutdown') shutdown(); });
@@ -320,9 +330,8 @@ try {
     },
     log: message => log.write(`${new Date().toISOString()} ${message}\n`),
   });
-  server = createServer({ key, backend: { complete: (...args) => runtime.backend.complete(...args) }, getModels: publishedModels, refresh: readModels, importModels, findConfig, setSystemProxy,
+  server = createServer({ server, key, selectModel, backend: { complete: (...args) => runtime.backend.complete(...args) }, getModels: publishedModels, refresh: readModels, importModels, findConfig, setSystemProxy,
     status: () => state, probe: startProbes, onResult: record, onActivity: noteActivity });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   update({ message: '正在启动隔离模型服务' });
   runtime = attachTranslator(await startBackend(binary, dataDir, log, startupProxyEnv));
   watchRuntime(runtime);
@@ -332,4 +341,4 @@ try {
   await refresh();
   startProbes(undefined, true, true);
   console.log(`OW Bridge ready at ${endpoint}; ${models.length} free models`);
-} catch (e) { update({ phase: 'error', message: e.message }); if (!server?.listening) await shutdown(1); }
+} catch (e) { update({ phase: 'error', message: e.message }); if (!runtime) await shutdown(1); }

@@ -16,6 +16,7 @@ test('startup imports once; repeated checks and reads require import; exit remov
   const catalog = { models: [{ id: 'opencode/a', name: 'A' }, { id: 'opencode/b', name: 'B' }], failed: [] };
   const writeCatalog = () => fs.writeFile(path.join(root, 'catalog.json'), JSON.stringify(catalog));
   await writeCatalog();
+  await fs.writeFile(path.join(root, 'service.pid'), String(process.pid));
   const socket = net.createServer();
   await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
   const port = socket.address().port;
@@ -89,6 +90,16 @@ test('startup imports once; repeated checks and reads require import; exit remov
     const imported = JSON.parse(await fs.readFile(config, 'utf8'));
     assert.deepEqual(imported.map(m => m.id), ['personal', 'OC · A', 'OC · B']);
     assert.equal(imported[2].supportsToolCall, false);
+    await post('selection', { model: 'opencode/b', selected: false });
+    assert.equal(await fs.readFile(config, 'utf8'), JSON.stringify(imported, null, 2) + '\n', 'Selection does not write WorkBuddy');
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8')).excludedModels, ['opencode/b']);
+    await post('import');
+    assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).map(m => m.id), ['personal', 'OC · A']);
+    await post('selection', { model: 'opencode/a', selected: false });
+    await post('import');
+    assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')), [manual], 'Empty selection removes only managed entries');
+    await post('selection', { model: 'opencode/a', selected: true });
+    await post('selection', { model: 'opencode/b', selected: true });
     const alternate = path.join(root, 'custom', 'models.json');
     await fs.mkdir(path.dirname(alternate));
     await fs.writeFile(alternate, JSON.stringify([manual]));
