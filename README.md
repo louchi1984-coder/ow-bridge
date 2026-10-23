@@ -2,7 +2,7 @@
 
 跨平台托盘应用，通过隔离的 OpenCode 为 WorkBuddy 提供免费模型。使用 Electron 共用界面和现有 Node.js 代理核心。
 
-> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.14 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
+> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.15 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
 
 ## 界面预览
 
@@ -16,8 +16,8 @@
 
 | 系统 | 验证状态 | 下载 |
 |---|---|---|
-| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.14 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.14/OW-Bridge-0.2.14-win-x64-portable.zip) |
-| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，ZIP 签名完整性检查通过 | [v0.2.14 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.14/OW-Bridge-0.2.14-mac-arm64.zip) |
+| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.15 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.15/OW-Bridge-0.2.15-win-x64-portable.zip) |
+| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，ZIP 签名完整性检查通过 | [v0.2.15 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.15/OW-Bridge-0.2.15-mac-arm64.zip) |
 | Windows ARM64 | 未正式测试，旧版 | [v0.2.2 ARM64 安装程序](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-win-arm64.exe) |
 | Linux x64 | 实验性，未正式测试，旧版 | [v0.2.2 AppImage](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-linux-x86_64.AppImage) |
 
@@ -25,9 +25,9 @@
 
 ## 使用
 
-- macOS：解压 `OW-Bridge-0.2.14-mac-arm64.zip`，双击 OW Bridge.app。
-- **Windows x64：完整解压 `OW-Bridge-0.2.14-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
-- 首次启动自动准备 OpenCode、扫描免费模型；启动不发送模型探测，按 OpenCode 目录声明导入模型，无需先检测。
+- macOS：解压 `OW-Bridge-0.2.15-mac-arm64.zip`，双击 OW Bridge.app。
+- **Windows x64：完整解压 `OW-Bridge-0.2.15-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
+- 首次启动自动准备 OpenCode、扫描免费模型；每次启动只读取目录，不恢复旧检测状态、不发送模型探测。可在 OW Bridge 点击每个模型旁的“检测”单独检测，也可按 OpenCode 目录声明直接导入，无需先检测。
 - macOS 保持使用 `~/.workbuddy/models.json`。Windows 自动识别默认配置、已保存位置和 WorkBuddy 配置目录环境变量。常规路径找不到时，点击导入后用已检测可用的模型，通过独立 OpenCode 只读会话搜索 `models.json`；有效候选自动记住并导入；找到多个时，选择查找校验前最后访问时间最新的一份，不再弹窗选择。也可从 Windows 托盘“自动查找 WorkBuddy 配置…”重新查找，或“选择 WorkBuddy 配置…”手动指定；首次使用请先在 WorkBuddy 保存一个自定义模型。Windows 托盘菜单“选择 WorkBuddy 配置…”可更换位置，切换时清理旧文件中的本应用条目。不会在猜测的位置新建模型配置。
 - 后续重新扫描或检测不会改 WorkBuddy；点击“导入 WorkBuddy”更新，界面会反馈结果。
 - 关闭窗口继续在托盘运行；从托盘退出时删除本应用导入的模型，保留用户手动配置。
@@ -98,6 +98,13 @@ Windows 首次启动默认读取系统 HTTP/HTTPS 代理，没有可用配置时
 自动查找额外通过本地目录枚举补齐 OpenCode glob 可能漏掉的 `.workbuddy` 隐藏目录，并与模型找到的候选合并。自动查找只允许目录和文件名搜索，配置内容由本地程序验证，不交给模型。依赖可用的免费模型；查找失败仍可手动选择。已有有效旧文件时不会判断其是否已被 WorkBuddy 弃用，请通过托盘重新查找。详见 [配置查找说明](docs/config-finder.md)。
 
 关闭“使用系统代理”时，模型连接通过本机 IPv6 转发器直连 OpenCode，TLS 保持端到端加密，不经过外部代理；开启时使用系统 HTTP/HTTPS 代理。关闭状态要求本机网络具备 IPv6，不自动回退 IPv4。此设置不改变系统 DNS、VPN 或 npm 安装下载的网络策略。
+
+### v0.2.15：逐个模型手动检测
+
+- 每个模型旁提供独立“检测”按钮，检测时显示旋转图标；移除控制面板和托盘的“检测全部”。
+- 每次启动只读取模型目录，显示待检测，不沿用上次失败状态；不会自动发送检测请求。
+- 未检测或检测失败仍可导入和调用。单模型检测保留访问限制冷却确认，确认后只检测所选模型。
+- 本轮验证 UI 操作传参、启动状态和核心回归；不代表重新验证全部免费模型或 WorkBuddy 完整任务。
 
 ### v0.2.14：检测不再阻止使用
 

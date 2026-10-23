@@ -59,10 +59,10 @@ test('manual probe cooldown asks confirmation in the shared desktop action, canc
       __dirname: path.dirname(fileURLToPath(entry)), process, clearInterval, setTimeout, AbortSignal,
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(entry, 'utf8') + '\nstate = { phase: "ready" }; dataDir = "/tmp/ow-dialog-test"; globalThis.invokeProbe = () => action("probe");', context);
+    vm.runInContext(fs.readFileSync(entry, 'utf8') + '\nstate = { phase: "ready" }; dataDir = "/tmp/ow-dialog-test"; globalThis.invokeProbe = () => action("probe", { model: "opencode/a" });', context);
     const result = await context.invokeProbe();
     assert.equal(dialogs, 1);
-    assert.deepEqual(bodies, responseChoice ? [{ confirmed: false }, { confirmed: true }] : [{ confirmed: false }]);
+    assert.deepEqual(bodies, responseChoice ? [{ model: "opencode/a", confirmed: false }, { model: "opencode/a", confirmed: true }] : [{ model: "opencode/a", confirmed: false }]);
     assert.equal(responseChoice ? result.started : result.canceled, true);
   }
 });

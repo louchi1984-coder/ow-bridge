@@ -67,6 +67,9 @@ test('real service stops on first 403, persists cooldown over two restarts, and 
   for (let i = 0; i < 2; i++) {
     await f.stop(); state = await f.start();
     assert.equal(state.probeBlockedUntil, until);
+    assert.deepEqual(state.modelResults, {}, 'Old failures are not current results');
+    assert.deepEqual(state.pendingModels, data.models.map(m => m.id));
+    assert.match(state.message, /运行中/);
     await f.post('refresh'); await f.post('system-proxy', { enabled: false });
     assert.equal((await f.requests()).length, 1);
   }

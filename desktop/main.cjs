@@ -47,10 +47,9 @@ function publish() {
     { label: activityLabel(state), enabled: false },
     { label: '打开控制面板', click: showWindow }, { type: 'separator' },
     { label: '重新扫描免费模型', enabled: !busy, click: () => trayAction('refresh') },
-    { label: '检测全部模型', enabled: !busy, click: () => trayAction('probe') },
     { label: '导入 WorkBuddy', enabled: !(actionBusy || state.configSearch?.running || state.phase !== 'ready'), click: () => trayAction('import') },
     ...(process.platform === 'win32' ? [{ label: '自动查找 WorkBuddy 配置…', enabled: !busy, click: () => trayAction('find-config') }, { label: '选择 WorkBuddy 配置…', enabled: !busy, click: () => trayAction('choose-config') }] : []),
-    { label: '模型状态', submenu: (state.models || []).map(m => ({ label: `OC · ${m.name} · ${available.has(m.id) ? m.toolcall === false ? '可用 · 仅对话' : '可用' : state.pendingModels?.includes(m.id) || !state.modelResults?.[m.id] || state.modelResults?.[m.id]?.ok ? '待检测' : '不可用'}`, enabled: false })) },
+    { label: '模型状态', submenu: (state.models || []).map(m => ({ label: `OC · ${m.name} · ${state.pendingModels?.includes(m.id) ? '待检测' : available.has(m.id) ? m.toolcall === false ? '可用 · 仅对话' : '可用' : state.pendingModels?.includes(m.id) || !state.modelResults?.[m.id] || state.modelResults?.[m.id]?.ok ? '待检测' : '不可用'}`, enabled: false })) },
     { type: 'separator' }, { label: '退出 OW Bridge', click: () => app.quit() },
   ]));
 }
@@ -62,6 +61,7 @@ async function readState() {
 }
 async function action(name, value) {
   if (!['refresh', 'probe', 'import', 'update-runtime', 'system-proxy', 'restart', 'choose-config', 'find-config', 'selection'].includes(name)) throw new Error('未知操作');
+  if (name === 'probe' && !value?.model) throw new Error('请选择要检测的模型');
   if (state.configSearch?.running) throw new Error('请等待配置查找完成');
   if (actionBusy) throw new Error('请等待当前操作完成');
   if (name === 'restart') {
@@ -102,7 +102,7 @@ async function action(name, value) {
     const endpoint = `http://127.0.0.1:${Number(process.env.BUDDY_PORT || 41980)}`;
     const send = confirmed => fetch(`${endpoint}/admin/${name}`, { method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(name === 'probe' ? { confirmed } : name === 'system-proxy' ? { enabled: value } : name === 'selection' ? value : modelsFile ? { modelsFile } : {}), ...(name === 'update-runtime' ? {} : { signal: AbortSignal.timeout(150000) }) });
+      body: JSON.stringify(name === 'probe' ? { model: value?.model, confirmed } : name === 'system-proxy' ? { enabled: value } : name === 'selection' ? value : modelsFile ? { modelsFile } : {}), ...(name === 'update-runtime' ? {} : { signal: AbortSignal.timeout(150000) }) });
     let response = await send(false);
     let result = await response.json();
     if (name === 'probe' && response.ok && result.confirmationRequired) {

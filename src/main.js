@@ -34,7 +34,7 @@ const endpoint = `http://127.0.0.1:${port}/v1`;
 let models = [], runtime, binary, stopping = false, refreshing;
 let previous = {};
 try { previous = JSON.parse(await fs.readFile(path.join(dataDir, 'status.json'), 'utf8')); } catch {}
-let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], excludedModels: settings.excludedModels || [], modelResults: previous.modelResults || {}, sync: null, availableModels: [], pendingModels: previous.pendingModels || [], probeBlockedUntil: Number(previous.probeBlockedUntil) || 0, probe: { running: false } };
+let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], excludedModels: settings.excludedModels || [], modelResults: {}, sync: null, availableModels: [], pendingModels: [], probeBlockedUntil: Number(previous.probeBlockedUntil) || 0, probe: { running: false } };
 // Serialize status writes so an older async update cannot overwrite a newer state.
 let statusWrites = Promise.resolve();
 function update(patch) {
@@ -100,7 +100,7 @@ async function record(model, ok, error, status, code, durationMs, source = 'requ
     return;
   }
   if (ok) validated.add(model); else validated.delete(model);
-  update({ lastRequest: result, ...(model ? { modelResults: { ...state.modelResults, [model]: result } } : {}), ...captured });
+  update({ lastRequest: result, ...(model ? { modelResults: { ...state.modelResults, [model]: result }, pendingModels: state.pendingModels.filter(id => id !== model) } : {}), ...captured });
   update({ availableModels: usableModels().map(m => m.id) });
 }
 // In-flight visibility: a slow or retrying upstream currently produces no output at all, so
@@ -390,9 +390,8 @@ try {
   const agents = await runtime.backend.request('/agent');
   if (!agents.some(a => a.name === 'buddy-bridge')) throw new Error('Dedicated approval-gated agent missing');
   await refresh();
-  // models.json lists installed models, not the model selected in a WorkBuddy session.
-  // Without a reliable selection, startup restores cache and sends no probe requests.
-  if (state.probeBlockedUntil > Date.now()) update({ message: PROBE_PAUSED });
+  // Startup reads the catalog only. Detection is explicitly initiated by the user.
+  // Keep the cooldown for manual confirmation, without presenting old failures as current.
   await syncPublished();
   console.log(`OW Bridge ready at ${endpoint}; ${models.length} free models`);
 } catch (e) { update({ phase: 'error', message: e.message }); if (!runtime) await shutdown(1); }

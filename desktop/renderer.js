@@ -13,7 +13,7 @@ function label(model) {
   if (state.availableModels?.includes(model.id)) return model.toolcall === false ? '可用 · 仅对话' : '可用';
   return ({ timeout: '检测超时', quota: '额度不足', rate_limit: '请求受限', access: '访问受限' })[r?.category] || (r?.ok === false ? '不可用' : '待检测');
 }
-function rank(model) { return waiting(model.id) || state.pendingModels?.includes(model.id) ? 1 : state.availableModels?.includes(model.id) ? 0 : state.modelResults?.[model.id]?.ok === false ? 2 : 1; }
+function rank(model) { return waiting(model.id) || state.pendingModels?.includes(model.id) ? 1 : state.modelResults?.[model.id]?.ok === false ? 2 : state.availableModels?.includes(model.id) ? 0 : 1; }
 function timing(id) {
   const r = state.modelResults?.[id]; if (!Number.isFinite(r?.durationMs)) return '响应耗时 —';
   const duration = r.durationMs < 1000 ? `${r.durationMs} ms` : `${(r.durationMs / 1000).toFixed(1)} 秒`;
@@ -45,6 +45,13 @@ function renderModels() {
     if (model.images) badges.append(element('span', 'badge images', '图片'));
     const status = label(model); badges.append(element('span', 'badge ' + (rank(model) === 2 ? 'unavailable' : rank(model) === 1 ? 'waiting' : ''), status));
     details.append(icon, info, badges); row.append(choose, details); details.onclick = () => { selected = selected === model.id ? null : model.id; renderModels(); renderDetails(); };
+    const probe = element('button', 'model-probe');
+    probe.setAttribute('aria-label', `检测 OC · ${model.name}`);
+    probe.disabled = !!(pendingAction || state.actionBusy || state.configSearch?.running || state.probe?.running || state.phase !== 'ready');
+    if (waiting(model.id)) probe.append(element('span', 'spinner'));
+    probe.append(document.createTextNode(waiting(model.id) ? '检测中…' : '检测'));
+    probe.onclick = event => { event.stopPropagation(); run('probe', { model: model.id }); };
+    row.append(probe);
     $('models').append(row);
     if (focused === model.id) row.focus({ preventScroll: true });
   }
@@ -73,7 +80,7 @@ function renderDetails() {
 }
 function render() {
   const busy = pendingAction || state.actionBusy || state.configSearch?.running || state.probe?.running || state.phase !== 'ready';
-  for (const id of ['refresh', 'probe', 'import', 'proxy', 'update-runtime']) $(id).disabled = !!(id === 'import' ? pendingAction || state.actionBusy || state.configSearch?.running || state.phase !== 'ready' : busy);
+  for (const id of ['refresh', 'import', 'proxy', 'update-runtime']) $(id).disabled = !!(id === 'import' ? pendingAction || state.actionBusy || state.configSearch?.running || state.phase !== 'ready' : busy);
   $('restart').hidden = state.phase !== 'error';
   $('restart').disabled = !!(pendingAction || state.actionBusy);
   $('proxy').disabled = !!(pendingAction || state.actionBusy || state.configSearch?.running || state.probe?.running || !['ready', 'error'].includes(state.phase));
@@ -83,7 +90,7 @@ function render() {
   $('discovered').textContent = state.models?.length || 0;
   $('available').textContent = state.availableModels?.length || 0;
   $('pending').textContent = state.models?.filter(m => rank(m) === 1).length || 0;
-  for (const [id, title, active] of [['update-runtime', '更新 OpenCode', state.actionBusy === 'update-runtime'], ['refresh', '读取免费模型', state.actionBusy === 'refresh'], ['probe', '检测全部', state.probe?.running], ['import', '导入 WorkBuddy', state.actionBusy === 'import']]) {
+  for (const [id, title, active] of [['update-runtime', '更新 OpenCode', state.actionBusy === 'update-runtime'], ['refresh', '读取免费模型', state.actionBusy === 'refresh'], ['import', '导入 WorkBuddy', state.actionBusy === 'import']]) {
     $(id).replaceChildren(); if (active) $(id).append(element('span', 'spinner'));
     $(id).append(document.createTextNode(active ? id === 'update-runtime' ? '正在更新…' : id === 'import' ? '正在导入…' : id === 'refresh' ? '正在读取…' : '正在检测…' : title));
   }
@@ -98,7 +105,7 @@ async function run(name, value) {
     if (!response.ok) throw new Error(response.error);
     if (name === 'probe' && response.result.canceled) feedback('已取消检测，继续冷却。');
     if (name === 'probe' && response.result.message) feedback(response.result.message);
-    if (name === 'update-runtime') feedback(response.result.changed ? `OpenCode 已更新至 ${response.result.version}，仅检测需要更新结果的模型。` : `OpenCode ${response.result.version} 已是最新，无需更新。`);
+    if (name === 'update-runtime') feedback(response.result.changed ? `OpenCode 已更新至 ${response.result.version}，已重新读取模型，可手动检测。` : `OpenCode ${response.result.version} 已是最新，无需更新。`);
     if (name === 'selection') { state.excludedModels = response.result.excludedModels; feedback('选择已保存，点击导入 WorkBuddy 后生效。'); }
     if (name === 'import') {
       const r = response.result;
@@ -109,7 +116,7 @@ async function run(name, value) {
   finally { pendingAction = false; render(); }
 }
 function feedback(text, error = false) { $('feedback').textContent = text; $('feedback').className = error ? 'error' : ''; $('feedback').hidden = false; }
-for (const action of ['refresh', 'probe', 'import', 'restart', 'update-runtime']) $(action).onclick = () => run(action);
+for (const action of ['refresh', 'import', 'restart', 'update-runtime']) $(action).onclick = () => run(action);
 $('proxy').onchange = () => run('system-proxy', $('proxy').checked);
 function dismiss() { selected = null; renderModels(); renderDetails(); }
 document.addEventListener('click', e => { if (!e.target.closest('.model') && !e.target.closest('#details')) dismiss(); });
