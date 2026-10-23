@@ -15,6 +15,7 @@ export async function startBackend(binary, dataDir) {
     models: async () => (await read()).models,
     async complete(request) {
       await fs.appendFile(path.join(dataDir, 'requests.jsonl'), JSON.stringify({ model: request.model.id, chatOnly: request.chatOnly === true, time: Date.now() }) + '\n');
+      if (request.tools.length && (await read()).probeTimeout) throw Object.assign(new Error('Model probe timed out'), { status: 504, code: 'timeout' });
       const failures = (await read()).gatewayErrors || {};
       const failure = failures[request.model.id];
       if (failure && (!failure.chatOnly || request.chatOnly)) throw Object.assign(new Error('Gateway rejected'), { status: failure.status, code: 'model_error' });

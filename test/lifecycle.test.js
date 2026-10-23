@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { OWNER } from '../src/sync.js';
 
-test('startup imports cached models without probing; repeated checks and reads require import; exit removes owned models', async () => {
+test('startup imports catalog models without probing; repeated checks and reads require import; exit removes owned models', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buddy-lifecycle-'));
   const config = path.join(root, 'models.json');
   const manual = { id: 'personal', apiKey: 'keep' };
@@ -16,7 +16,7 @@ test('startup imports cached models without probing; repeated checks and reads r
   const catalog = { models: [{ id: 'opencode/a', name: 'A' }, { id: 'opencode/b', name: 'B' }], failed: [] };
   const writeCatalog = () => fs.writeFile(path.join(root, 'catalog.json'), JSON.stringify(catalog));
   await writeCatalog();
-  await fs.writeFile(path.join(root, 'status.json'), JSON.stringify({ models: catalog.models, modelResults: Object.fromEntries(catalog.models.map(m => [m.id, { ok: true, time: new Date().toISOString() }])) }));
+  // No cached probe results: discovery alone must allow import and requests.
   await fs.writeFile(path.join(root, 'service.pid'), String(process.pid));
   const socket = net.createServer();
   await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
@@ -56,7 +56,7 @@ test('startup imports cached models without probing; repeated checks and reads r
       assert.equal((await response.json()).choices[0].message.content, expected);
       catalog.checkTranslator = false; await writeCatalog();
     }
-    await checkTranslator('opencode/b');
+    await checkTranslator('none');
     catalog.formatError = true; await writeCatalog();
     const failedResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'OC · A', messages: [{ role: 'user', content: 'Hello' }] }) });
     assert.equal(failedResponse.status, 502);
@@ -78,7 +78,7 @@ test('startup imports cached models without probing; repeated checks and reads r
     catalog.updateError = false; catalog.upgrade = 'broken'; await writeCatalog();
     await updateRuntime(502);
     await waitFor(s => s.phase === 'ready' && s.opencodeVersion === 'test');
-    await checkTranslator('opencode/b');
+    await checkTranslator('none');
     catalog.upgrade = 'test-new'; await writeCatalog();
     assert.deepEqual(await updateRuntime(200), { changed: true, version: 'test-new' });
     await waitFor(s => s.phase === 'ready' && !s.probe.running && s.opencodeVersion === 'test-new');
@@ -97,14 +97,14 @@ test('startup imports cached models without probing; repeated checks and reads r
     assert.equal(await fs.readFile(config, 'utf8'), initial, 'Network mode changes do not import models');
     assert.equal(await backups(), 2, 'Repeated checks and reads produce no config writes');
     await post('import');
-    assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).map(m => m.id), ['personal', 'OC · A']);
+    assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).map(m => m.id), ['personal', 'OC · A', 'OC · B']);
     catalog.failed = []; catalog.chatOnly = ['opencode/b']; await writeCatalog();
     await post('probe');
     await waitFor(s => !s.probe.running && s.modelResults['opencode/b']?.chatOnly);
     await post('import');
     const imported = JSON.parse(await fs.readFile(config, 'utf8'));
     assert.deepEqual(imported.map(m => m.id), ['personal', 'OC · A', 'OC · B']);
-    assert.equal(imported[2].supportsToolCall, false);
+    assert.equal(imported[2].supportsToolCall, true, 'Probe result must not override catalog capabilities');
     await post('selection', { model: 'opencode/b', selected: false });
     assert.equal(await fs.readFile(config, 'utf8'), JSON.stringify(imported, null, 2) + '\n', 'Selection does not write WorkBuddy');
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8')).excludedModels, ['opencode/b']);

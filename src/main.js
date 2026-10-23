@@ -52,14 +52,15 @@ function restoreCachedModels() {
   update({ models, pendingModels: models.filter(m => !validated.has(m.id) && (state.pendingModels.includes(m.id) || state.modelResults[m.id]?.ok !== false)).map(m => m.id) });
   update({ availableModels: usableModels().map(m => m.id) });
 }
-const usableModels = () => models.filter(m => !state.pendingModels.includes(m.id) && validated.has(m.id) && state.modelResults[m.id]?.ok === true).map(m => ({ ...m, chatOnly: state.modelResults[m.id]?.chatOnly === true }));
+// Detection is diagnostic only. Catalog models remain callable before and after a probe.
+const usableModels = () => models.map(m => ({ ...m, chatOnly: m.toolcall === false }));
 const publishedModels = usableModels;
 // Translation runs a second model whose only job is the shape. Detection never translates: a probe
 // must measure the model itself, not what the translator can rescue.
 const TRANSLATOR_ORDER = ['opencode/big-pickle', 'opencode/nemotron-3.5-lightning-free', 'opencode/space-bunny-free', 'opencode/mimo-v2.6-flash-free'];
 const attachTranslator = runtime => {
   runtime.backend.translator = failed => {
-    const usable = usableModels().map(model => model.id).filter(id => id !== failed);
+    const usable = usableModels().filter(model => validated.has(model.id) && state.modelResults[model.id]?.ok === true).map(model => model.id).filter(id => id !== failed);
     return TRANSLATOR_ORDER.find(id => usable.includes(id)) ?? usable[0] ?? null;
   };
   return runtime;
@@ -145,7 +146,7 @@ function startProbes(modelID, { manual = false, confirmed = false, force = false
   const selected = candidates.filter(m => manual || force || !cachedProbe(m, state.modelResults[m.id], previous.models?.find(old => old.id === m.id)));
   if (!selected.length) return { started: false, message: '没有需要检测的模型' };
   probing = true;
-  update({ message: '正在检测模型…' });
+  update({ message: '正在检测模型…', probe: { running: true, pending: selected.map(m => m.id) } });
   console.log(`${new Date().toISOString()} Model detection started: ${manual ? 'manual' : 'automatic'}, ${selected.length} models`);
   probeTask = (async () => {
     try {
@@ -163,7 +164,7 @@ function startProbes(modelID, { manual = false, confirmed = false, force = false
         probe: async model => {
           update({ probe: { ...state.probe, current: model.id } });
           const started = performance.now();
-          const meta = { probe: true };
+          const meta = { probe: true, model: model.id, activity: noteActivity };
           let failure;
           const deadline = new AbortController();
           let timedOut = false;
@@ -179,9 +180,8 @@ function startProbes(modelID, { manual = false, confirmed = false, force = false
             if (!stopping && [401, 403, 429].includes(e.status)) {
               await record(model.id, false, e.message, e.status, e.code, Math.round(performance.now() - started), 'probe', undefined, meta);
             } else if (!stopping && e.code === 'no_action') {
-              // Replying with text says the model works, not that it failed: it is usable for
-              // chat only, so it is published with tools disabled instead of being withdrawn.
-              await record(model.id, true, '探测时只返回文本、未产生动作；已按仅对话发布', undefined, 'chat_only', Math.round(performance.now() - started), 'probe', true);
+              // Record the observed capability without changing the catalog or admission policy.
+              await record(model.id, true, '检测时只返回文本、未产生工具调用；不影响模型使用', undefined, 'chat_only', Math.round(performance.now() - started), 'probe', true);
             } else if (!stopping && formatUnsupported(e)) {
               try {
                 const chatModel = { ...model, chatOnly: true };
@@ -308,7 +308,7 @@ async function findConfig(afterProbe = false) {
 }
 
 async function selectModel(model, selected) {
-  if (stopping || probing || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待检测完成后选择模型');
+  if (stopping || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待服务就绪后选择模型');
   if (typeof selected !== 'boolean' || !models.some(m => m.id === model)) throw new Error('无效的模型选择');
   const excluded = new Set(settings.excludedModels || []);
   if (selected) excluded.delete(model); else excluded.add(model);
@@ -319,7 +319,7 @@ async function selectModel(model, selected) {
 }
 
 async function importModels(selectedFile) {
-  if (stopping || probing || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待读取和检测完成后导入');
+  if (stopping || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待读取完成后导入');
   if (selectedFile !== undefined) {
     await validateModelsFile(selectedFile);
     if (modelsFile && modelsFile !== selectedFile && await fs.stat(modelsFile).catch(e => { if (e.code === 'ENOENT') return null; throw e; })) {

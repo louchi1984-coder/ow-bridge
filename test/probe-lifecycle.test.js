@@ -45,7 +45,11 @@ async function fixture(t, catalog) {
     const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
   }
   const requests = async () => (await fs.readFile(path.join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(JSON.parse);
-  return { root, start, stop, post, requests, waitFor, writeCatalog };
+  async function api(route, body) {
+    const key = (await fs.readFile(path.join(root, 'api-key'), 'utf8')).trim();
+    return fetch(`http://127.0.0.1:${port}/v1/${route}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  }
+  return { root, start, stop, post, api, requests, waitFor, writeCatalog };
 }
 const catalog = () => ({ models: [{ id: 'opencode/a', name: 'A' }, { id: 'opencode/b', name: 'B' }, { id: 'opencode/c', name: 'C' }], failed: [] });
 
@@ -84,7 +88,7 @@ test('chat fallback 429 also stops the entire batch', async t => {
 test('catalog refresh and proxy changes never infer; manual detection refreshes changed and expired cache', async t => {
   const data = catalog(); const f = await fixture(t, data);
   await f.start(); await f.post('probe');
-  await f.waitFor(s => !s.probe.running && s.availableModels.length === 3);
+  await f.waitFor(s => !s.probe.running && s.modelResults['opencode/c']?.ok);
   const initial = (await f.requests()).length;
   await f.post('refresh'); assert.equal((await f.requests()).length, initial);
   data.models[1].images = true; data.models.push({ id: 'opencode/d', name: 'D' }); await f.writeCatalog();
@@ -93,7 +97,7 @@ test('catalog refresh and proxy changes never infer; manual detection refreshes 
   await f.post('system-proxy', { enabled: false });
   assert.equal((await f.requests()).length, initial);
   await f.post('probe');
-  await f.waitFor(s => !s.probe.running && s.availableModels.length === 4);
+  await f.waitFor(s => !s.probe.running && s.modelResults['opencode/d']?.ok);
   assert.deepEqual((await f.requests()).slice(initial).map(r => r.model), ['opencode/a', 'opencode/b', 'opencode/c', 'opencode/d']);
   await f.stop();
   const file = path.join(f.root, 'status.json'), saved = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -102,11 +106,29 @@ test('catalog refresh and proxy changes never infer; manual detection refreshes 
   const before = (await f.requests()).length;
   const state = await f.start();
   assert.equal((await f.requests()).length, before);
-  assert.equal(state.availableModels.length, 3);
+  assert.equal(state.availableModels.length, 4);
   assert.ok(state.pendingModels.includes('opencode/a'));
   await f.post('refresh');
   assert.equal((await f.requests()).length, before);
   await f.post('probe', { model: 'opencode/a' });
-  await f.waitFor(s => !s.probe.running && s.availableModels.length === 4);
+  await f.waitFor(s => !s.probe.running && Date.parse(s.modelResults['opencode/a']?.time) > Date.parse(saved.modelResults['opencode/a'].time));
   assert.deepEqual((await f.requests()).slice(before).map(r => r.model), ['opencode/a']);
+});
+
+
+test('a timed-out probe never removes a model from the API or import, including after restart', async t => {
+  const data = catalog(); data.probeTimeout = true;
+  const f = await fixture(t, data); await f.start();
+  await f.post('probe', { model: 'opencode/a' });
+  const state = await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.code === 'timeout');
+  assert.equal(state.availableModels.length, 3);
+  assert.equal((await f.post('import')).count, 3);
+  await f.stop();
+  assert.equal((await f.start()).availableModels.length, 3);
+  assert.equal((await f.requests()).length, 1, 'Restart does not infer');
+  const listed = await (await f.api('models')).json();
+  assert.equal(listed.data.length, 3);
+  const response = await f.api('chat/completions', { model: 'OC · A', messages: [{ role: 'user', content: 'Hello' }] });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).choices[0].message.content, 'OK');
 });

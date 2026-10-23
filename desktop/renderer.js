@@ -9,7 +9,8 @@ function label(model) {
   if ((state.activity || []).some(a => a.model === model.id)) return '请求中';
   if (state.pendingModels?.includes(model.id)) return '待检测';
   const r = state.modelResults?.[model.id];
-  if (state.availableModels?.includes(model.id)) return r?.chatOnly ? '可用 · 仅对话' : '可用';
+  if (r?.ok === false) return ({ timeout: '检测超时', quota: '额度不足', rate_limit: '请求受限', access: '访问受限' })[r.category] || '检测未通过';
+  if (state.availableModels?.includes(model.id)) return model.toolcall === false ? '可用 · 仅对话' : '可用';
   return ({ timeout: '检测超时', quota: '额度不足', rate_limit: '请求受限', access: '访问受限' })[r?.category] || (r?.ok === false ? '不可用' : '待检测');
 }
 function rank(model) { return waiting(model.id) || state.pendingModels?.includes(model.id) ? 1 : state.availableModels?.includes(model.id) ? 0 : state.modelResults?.[model.id]?.ok === false ? 2 : 1; }
@@ -29,7 +30,7 @@ function renderModels() {
     const row = element('div', 'model' + (selected === model.id ? ' selected' : '')); row.dataset.model = model.id;
     const choose = element('input', 'model-check'); choose.type = 'checkbox';
     choose.checked = !!state.availableModels?.includes(model.id) && !(state.excludedModels || []).includes(model.id);
-    choose.disabled = !!(pendingAction || state.actionBusy || state.probe?.running || state.configSearch?.running || state.phase !== 'ready' || !state.availableModels?.includes(model.id));
+    choose.disabled = !!(pendingAction || state.actionBusy || state.configSearch?.running || state.phase !== 'ready' || !state.availableModels?.includes(model.id));
     choose.setAttribute('aria-label', `导入 OC · ${model.name}`);
     choose.onclick = event => event.stopPropagation();
     choose.onchange = () => run('selection', { model: model.id, selected: choose.checked });
@@ -56,7 +57,8 @@ function renderDetails() {
   const r = state.modelResults?.[model.id] || {};
   $('details').replaceChildren(element('strong', '', model.id));
   const add = (text, css = '') => $('details').append(element('p', css, text));
-  if (r.chatOnly) add('已自动关闭工具调用；导入后仅支持普通对话。');
+  if (model.toolcall === false) add('OpenCode 声明不支持工具调用；导入后仅支持普通对话。');
+  if (r.source === 'probe') add('检测仅供诊断，不影响导入和调用；工具能力按 OpenCode 声明设置。');
   if (Number.isInteger(r.nativeAttempts) && r.nativeAttempts > 0) add(`最近一次调用拦截了 ${r.nativeAttempts} 次本地执行尝试，动作必须由 WorkBuddy 执行。`, 'error-text');
   if (Number.isInteger(r.calls) && r.calls > 0) add(`最近一次调用返回了 ${r.calls} 个动作。`);
   if (r.handoff) add(`最近一次调用把被拦下的本地动作转交成外部 ${r.handoff} 调用。`);
@@ -71,7 +73,7 @@ function renderDetails() {
 }
 function render() {
   const busy = pendingAction || state.actionBusy || state.configSearch?.running || state.probe?.running || state.phase !== 'ready';
-  for (const id of ['refresh', 'probe', 'import', 'proxy', 'update-runtime']) $(id).disabled = !!busy;
+  for (const id of ['refresh', 'probe', 'import', 'proxy', 'update-runtime']) $(id).disabled = !!(id === 'import' ? pendingAction || state.actionBusy || state.configSearch?.running || state.phase !== 'ready' : busy);
   $('restart').hidden = state.phase !== 'error';
   $('restart').disabled = !!(pendingAction || state.actionBusy);
   $('proxy').disabled = !!(pendingAction || state.actionBusy || state.configSearch?.running || state.probe?.running || !['ready', 'error'].includes(state.phase));
@@ -86,7 +88,7 @@ function render() {
     $(id).append(document.createTextNode(active ? id === 'update-runtime' ? '正在更新…' : id === 'import' ? '正在导入…' : id === 'refresh' ? '正在读取…' : '正在检测…' : title));
   }
   const sync = state.sync;
-  $('sync').textContent = (state.configSearch?.running ? 'OpenCode 正在只读查找 WorkBuddy 配置…' : state.configSearch?.candidates?.length > 1 && !state.modelsFile ? '已找到配置文件，点击导入 WorkBuddy 使用最近访问的一份。' : '') || sync?.error || (sync?.time ? `已导入 ${sync.count ?? 0} 个模型 · 再次检测后需点击导入 WorkBuddy 更新` : '启动时仅导入有效缓存；检测后需手动导入 WorkBuddy');
+  $('sync').textContent = (state.configSearch?.running ? 'OpenCode 正在只读查找 WorkBuddy 配置…' : state.configSearch?.candidates?.length > 1 && !state.modelsFile ? '已找到配置文件，点击导入 WorkBuddy 使用最近访问的一份。' : '') || sync?.error || (sync?.time ? `已导入 ${sync.count ?? 0} 个模型 · 模型选择变更后需点击导入 WorkBuddy 更新` : '按 OpenCode 声明导入模型；检测不影响使用');
   renderModels(); renderDetails();
 }
 async function run(name, value) {

@@ -48,9 +48,9 @@ function publish() {
     { label: '打开控制面板', click: showWindow }, { type: 'separator' },
     { label: '重新扫描免费模型', enabled: !busy, click: () => trayAction('refresh') },
     { label: '检测全部模型', enabled: !busy, click: () => trayAction('probe') },
-    { label: '导入 WorkBuddy', enabled: !busy, click: () => trayAction('import') },
+    { label: '导入 WorkBuddy', enabled: !(actionBusy || state.configSearch?.running || state.phase !== 'ready'), click: () => trayAction('import') },
     ...(process.platform === 'win32' ? [{ label: '自动查找 WorkBuddy 配置…', enabled: !busy, click: () => trayAction('find-config') }, { label: '选择 WorkBuddy 配置…', enabled: !busy, click: () => trayAction('choose-config') }] : []),
-    { label: '模型状态', submenu: (state.models || []).map(m => ({ label: `OC · ${m.name} · ${available.has(m.id) ? state.modelResults?.[m.id]?.chatOnly ? '可用 · 仅对话' : '可用' : state.pendingModels?.includes(m.id) || !state.modelResults?.[m.id] || state.modelResults?.[m.id]?.ok ? '待检测' : '不可用'}`, enabled: false })) },
+    { label: '模型状态', submenu: (state.models || []).map(m => ({ label: `OC · ${m.name} · ${available.has(m.id) ? m.toolcall === false ? '可用 · 仅对话' : '可用' : state.pendingModels?.includes(m.id) || !state.modelResults?.[m.id] || state.modelResults?.[m.id]?.ok ? '待检测' : '不可用'}`, enabled: false })) },
     { type: 'separator' }, { label: '退出 OW Bridge', click: () => app.quit() },
   ]));
 }
@@ -69,7 +69,7 @@ async function action(name, value) {
     try { await stopService(); state = { phase: 'starting', message: '正在启动隔离模型服务', models: [], modelResults: {} }; await startService(); return {}; }
     finally { actionBusy = false; publish(); }
   }
-  if ((state.phase !== 'ready' && !(name === 'system-proxy' && state.phase === 'error')) || state.probe?.running) throw new Error('请等待服务启动和检测完成');
+  if ((state.phase !== 'ready' && !(name === 'system-proxy' && state.phase === 'error')) || (state.probe?.running && !['import', 'selection', 'choose-config'].includes(name))) throw new Error('请等待服务启动和检测完成');
   if (name === 'system-proxy' && typeof value !== 'boolean') throw new Error('代理开关必须为布尔值');
   actionBusy = name; publish();
   try {

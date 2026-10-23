@@ -685,12 +685,14 @@ test('an in-flight request reports upstream retries from the event stream', asyn
     for (let i = 0; i < 40 && !streamed; i++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.ok(streamed, 'The bridge subscribes to the event stream while a request runs');
     streamed.write(event({ type: 'session.status', properties: { sessionID: 'ses_events', status: { type: 'retry', attempt: 2, message: 'socket closed', next: 1000 } } }));
+    streamed.write(event({ type: 'message.part.updated', properties: { part: { sessionID: 'ses_events', type: 'reasoning', text: 'thinking' } } }));
     streamed.write(event({ type: 'session.status', properties: { sessionID: 'ses_other', status: { type: 'retry', attempt: 9 } } }));
     await done;
     const retry = progress.find(p => p.status === 'retry');
     assert.equal(retry.attempt, 2, 'The upstream retry attempt is reported');
     assert.equal(retry.model, models[0].id);
     assert.equal(retry.message, 'socket closed');
+    assert.ok(progress.some(p => p.status === 'reasoning' && p.content), 'Real OpenCode part events carry sessionID inside part');
     assert.ok(progress.some(p => p.type === 'request.done'), 'Completion is reported so the entry is removed');
     assert.ok(!progress.some(p => p.sessionID === 'ses_other'), 'Other sessions are ignored');
   } finally { backend.stopEvents(); fake.closeAllConnections(); fake.close(); }
@@ -742,7 +744,7 @@ test('every detection category has a label the panel can show', async () => {
 
   for (const [category, label] of Object.entries(expected))
     assert.match(renderer, new RegExp(`${category}: '${label}'`), `The panel must label ${category} as ${label}`);
-  assert.match(renderer, /chatOnly \? '可用 · 仅对话'/, 'The panel must show the chat-only state');
+  assert.match(renderer, /toolcall === false \? '可用 · 仅对话'/, 'The panel must show the chat-only state');
 });
 
 test('only format incompatibility degrades a model to chat-only', async () => {

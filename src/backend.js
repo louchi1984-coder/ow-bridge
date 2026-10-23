@@ -117,7 +117,7 @@ export class Backend {
     }
     const info = event?.type === 'message.updated' ? event.properties?.info : undefined;
     if (info?.role === 'assistant' && info.tokens && this.usageBySession.has(info.sessionID)) this.usageBySession.set(info.sessionID, info.tokens);
-    const sessionID = event?.properties?.sessionID;
+    const sessionID = event?.properties?.sessionID ?? part?.sessionID ?? info?.sessionID;
     const meta = sessionID ? this.active.get(sessionID) : undefined;
     if (!meta || typeof meta.activity !== 'function') return;
     const status = event.properties?.status;

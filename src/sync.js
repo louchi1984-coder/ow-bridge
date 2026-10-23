@@ -25,7 +25,7 @@ export function mergeModels(document, models, endpoint, key, { allowEmpty = fals
   const conflicts = new Set(kept.map(m => m.id));
   const entries = models.filter(m => !conflicts.has(m.id) && !conflicts.has(clientModelID(m))).map(m => ({
     id: clientModelID(m), name: clientModelID(m), vendor: 'Custom', url: endpoint, apiKey: key,
-    supportsToolCall: !m.chatOnly, supportsImages: m.images === true, ...workBuddyReasoning(m),
+    supportsToolCall: m.toolcall !== false && !m.chatOnly, supportsImages: m.images === true, ...workBuddyReasoning(m),
     buddyBridgeOwner: OWNER,
     ...((m.input ?? m.context) ? { maxInputTokens: m.input ?? m.context } : {}),
     ...(m.output ? { maxOutputTokens: m.output } : {}),
