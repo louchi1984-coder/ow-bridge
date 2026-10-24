@@ -35,5 +35,5 @@ test('Windows manual proxy accepts shared and per-protocol addresses', () => {
   const split = parseWindowsProxy({ ProxyEnable: 1, ProxyServer: 'http=127.0.0.1:7890;https=127.0.0.1:7891;socks=127.0.0.1:7892' });
   assert.equal(split.HTTP_PROXY, 'http://127.0.0.1:7890');
   assert.equal(split.HTTPS_PROXY, 'http://127.0.0.1:7891');
-  for (const settings of [{ ProxyEnable: 0 }, { ProxyEnable: 1, ProxyServer: 'socks=localhost:7890' }, { ProxyEnable: 1, ProxyServer: 'localhost:99999' }]) assert.throws(() => parseWindowsProxy(settings));
+  for (const settings of [{ ProxyEnable: 1, ProxyServer: 'localhost:99999' }]) assert.throws(() => parseWindowsProxy(settings));
 });

@@ -365,7 +365,7 @@ try {
   try { startupProxyEnv = await systemProxyEnvironment(state.useSystemProxy); }
   catch (error) {
     // A fresh install prefers the system proxy when one exists, but a machine without a manual
-    // proxy must still be able to download directly. An explicitly saved "on" setting remains strict.
+    // proxy must still be able to download directly. Saved "on" still reports malformed settings.
     if (settings.useSystemProxy === true) throw error;
     startupProxyEnv = await systemProxyEnvironment(false);
     update({ useSystemProxy: false });
