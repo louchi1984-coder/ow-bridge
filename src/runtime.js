@@ -15,7 +15,6 @@ import { Backend, nativePermissions } from './backend.js';
 import { BackendV2, isolatedConfigV2 } from './backend-v2.js';
 import { finderAgent } from './config-finder.js';
 import { ProxyAgent } from 'undici';
-import { startIPv6Transport } from './ipv6-transport.js';
 
 const exec = promisify(execFile);
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -191,20 +190,6 @@ export const isolatedConfig = {
 };
 
 export async function startBackend(binary, dataDir, logStream, proxyEnv = {}) {
-  const direct = proxyEnv.HTTPS_PROXY || proxyEnv.https_proxy ? null
-    : await startIPv6Transport(message => logStream.write(`${new Date().toISOString()} ${message}\n`));
-  try {
-    const runtime = await launchBackend(binary, dataDir, logStream, direct?.env || proxyEnv);
-    if (direct) {
-      const stop = runtime.stop;
-      runtime.stop = async () => { try { await stop(); } finally { await direct.stop(); } };
-      runtime.child.once('exit', () => { void direct.stop(); });
-    }
-    return runtime;
-  } catch (error) { await direct?.stop(); throw error; }
-}
-
-async function launchBackend(binary, dataDir, logStream, proxyEnv) {
   const actualVersion = runtimeVersion((await exec(binary, ['--version'], { timeout: 15000, windowsHide: true })).stdout);
   const v2 = actualVersion.startsWith('2.');
   const root = path.join(dataDir, v2 ? 'opencode-v2' : 'opencode');
