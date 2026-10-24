@@ -357,7 +357,6 @@ process.on('uncaughtException', e => { update({ phase: 'error', message: e.messa
 process.on('unhandledRejection', e => { update({ phase: 'error', message: String(e?.message || e) }); shutdown(1); });
 try {
   update({ phase: 'starting' });
-  await syncPublished([]);
   let startupProxyEnv;
   try { startupProxyEnv = await systemProxyEnvironment(state.useSystemProxy); }
   catch (error) {
@@ -389,6 +388,5 @@ try {
   await refresh();
   // Startup reads the catalog only. Detection is explicitly initiated by the user.
   // Old failures are not presented as current results.
-  await syncPublished();
   console.log(`OW Bridge ready at ${endpoint}; ${models.length} free models`);
 } catch (e) { update({ phase: 'error', message: e.message }); if (!runtime) await shutdown(1); }

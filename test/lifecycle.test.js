@@ -39,12 +39,12 @@ test('startup selects nothing and successful probes select models without import
     throw new Error('Lifecycle timeout: ' + logs);
   }
   try {
-    await waitFor(s => s.phase === 'ready' && !s.probe.running && s.sync?.count === 0);
+    await waitFor(s => s.phase === 'ready' && !s.probe.running);
     await assert.rejects(fs.stat(path.join(root, 'requests.jsonl')), { code: 'ENOENT' });
     let initial = await fs.readFile(config, 'utf8');
     const backups = async () => (await fs.readdir(root)).filter(name => name.endsWith('.bak')).length;
-    assert.equal(await backups(), 1, 'Startup removes old managed entries without importing defaults');
-    assert.deepEqual(JSON.parse(initial).map(m => m.id), ['personal']);
+    assert.equal(await backups(), 0, 'Startup must not write WorkBuddy configuration');
+    assert.deepEqual(JSON.parse(initial).map(m => m.id), ['personal', 'old-owned']);
     const key = (await fs.readFile(path.join(root, 'api-key'), 'utf8')).trim();
     async function post(route, payload = {}) {
       const response = await fetch(`http://127.0.0.1:${port}/admin/${route}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -99,7 +99,7 @@ test('startup selects nothing and successful probes select models without import
     await checkTranslator('none');
     assert.equal(JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8')).useSystemProxy, false);
     assert.equal(await fs.readFile(config, 'utf8'), initial, 'Network mode changes do not import models');
-    assert.equal(await backups(), 2, 'Repeated checks and reads produce no config writes');
+    assert.equal(await backups(), 1, 'Repeated checks and reads produce no config writes');
     await post('import');
     assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).map(m => m.id), ['personal', 'OC · A', 'OC · B']);
     catalog.failed = []; catalog.chatOnly = ['opencode/b']; await writeCatalog();

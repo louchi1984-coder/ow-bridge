@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PROBE_CACHE_TTL } from '../src/probe-policy.js';
 
-async function fixture(t, catalog) {
+async function fixture(t, catalog, noSync = true) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ow-probe-policy-'));
   const writeCatalog = () => fs.writeFile(path.join(root, 'catalog.json'), JSON.stringify(catalog));
   await writeCatalog();
@@ -32,12 +32,12 @@ async function fixture(t, catalog) {
     port = socket.address().port; await new Promise(resolve => socket.close(resolve));
     child = spawn(process.execPath, ['--loader', new URL('./fixtures/runtime-loader.mjs', import.meta.url).href, 'src/main.js'], {
       cwd: fileURLToPath(new URL('..', import.meta.url)),
-      env: { ...process.env, BUDDY_DATA_DIR: root, BUDDY_PORT: String(port), BUDDY_MODELS_FILE: path.join(root, 'models.json'), BUDDY_NO_SYNC: '1' },
+      env: { ...process.env, BUDDY_DATA_DIR: root, BUDDY_PORT: String(port), BUDDY_MODELS_FILE: path.join(root, 'models.json'), BUDDY_NO_SYNC: noSync ? '1' : '0' },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
     child.stdout.on('data', x => logs += x); child.stderr.on('data', x => logs += x);
     exited = new Promise(resolve => child.once('exit', resolve));
-    return waitFor(s => s.phase === 'ready' && s.sync?.time && !s.probe.running);
+    return waitFor(s => s.phase === 'ready' && !s.probe.running);
   }
   async function post(route, body = {}) {
     const key = (await fs.readFile(path.join(root, 'api-key'), 'utf8')).trim();
@@ -135,15 +135,32 @@ test('default none, successful detection selects only that model, new models sta
  const data = catalog(); const f = await fixture(t, data);
  await fs.writeFile(path.join(f.root, 'settings.json'), JSON.stringify({excludedModels:[]}));
  let state = await f.start(); assert.deepEqual(state.selectedModels, []);
- assert.equal(state.sync.count, 0);
+ assert.equal(state.sync, null);
  await f.post('probe', {model:'opencode/a'});
  state = await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.ok);
  assert.deepEqual(state.selectedModels, ['opencode/a']);
- assert.equal(state.sync.count, 0, 'Detection does not import');
+ assert.equal(state.sync, null, 'Detection does not import');
  assert.equal((await f.post('import')).count, 1);
  data.models.push({id:'opencode/d',name:'D'}); await f.writeCatalog(); await f.post('refresh');
  await f.stop(); state = await f.start();
- assert.deepEqual(state.selectedModels, ['opencode/a']); assert.equal(state.sync.count, 1);
+ assert.deepEqual(state.selectedModels, ['opencode/a']); assert.equal(state.sync, null, 'Restart does not import');
  await f.post('selection', {model:'opencode/a',selected:false});
  assert.equal((await f.post('import')).count, 0);
+});
+
+
+test('startup preserves existing WorkBuddy configuration with empty or saved selections; exit removes owned entries', async t => {
+  const f = await fixture(t, catalog(), false);
+  const file = path.join(f.root, 'models.json');
+  const original = JSON.stringify([{id:'personal'}, {id:'OC · old', buddyBridgeOwner:'buddy-bridge-v1'}], null, 2);
+  for (const selectedModels of [[], ['opencode/a']]) {
+    await fs.writeFile(file, original);
+    await fs.writeFile(path.join(f.root, 'settings.json'), JSON.stringify({selectedModels}));
+    const backupsBefore = (await fs.readdir(f.root)).filter(name => name.endsWith('.bak')).length;
+    await f.start();
+    assert.equal(await fs.readFile(file, 'utf8'), original);
+    assert.equal((await fs.readdir(f.root)).filter(name => name.endsWith('.bak')).length, backupsBefore);
+    await f.stop();
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), [{id:'personal'}]);
+  }
 });

@@ -2,7 +2,7 @@
 
 跨平台托盘应用，通过隔离的 OpenCode 为 WorkBuddy 提供免费模型。使用 Electron 共用界面和现有 Node.js 代理核心。
 
-> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.18 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
+> **Windows x64 免安装版已在 Windows 实机验证，推荐下载 v0.2.19 portable 包。macOS（Apple Silicon）版也有实际使用验证。Windows ARM64、Linux 仍未正式测试，不能沿用 x64 的验证结论。**
 
 ## 界面预览
 
@@ -16,8 +16,8 @@
 
 | 系统 | 验证状态 | 下载 |
 |---|---|---|
-| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.18 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.18/OW-Bridge-0.2.18-win-x64-portable.zip) |
-| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，ZIP 签名完整性检查通过 | [v0.2.18 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.18/OW-Bridge-0.2.18-mac-arm64.zip) |
+| **Windows x64** | **已验证 · 推荐免安装版** | [v0.2.19 Portable ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.19/OW-Bridge-0.2.19-win-x64-portable.zip) |
+| macOS 13+，Apple Silicon（M 系列） | 已实际使用验证，ZIP 签名完整性检查通过 | [v0.2.19 Mac ARM64 ZIP](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.19/OW-Bridge-0.2.19-mac-arm64.zip) |
 | Windows ARM64 | 未正式测试，旧版 | [v0.2.2 ARM64 安装程序](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-win-arm64.exe) |
 | Linux x64 | 实验性，未正式测试，旧版 | [v0.2.2 AppImage](https://github.com/louchi1984-coder/ow-bridge/releases/download/v0.2.2/OW-Bridge-0.2.2-linux-x86_64.AppImage) |
 
@@ -25,12 +25,12 @@
 
 ## 使用
 
-- macOS：解压 `OW-Bridge-0.2.18-mac-arm64.zip`，双击 OW Bridge.app。
-- **Windows x64：完整解压 `OW-Bridge-0.2.18-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
+- macOS：解压 `OW-Bridge-0.2.19-mac-arm64.zip`，双击 OW Bridge.app。
+- **Windows x64：完整解压 `OW-Bridge-0.2.19-win-x64-portable.zip`，双击文件夹里的 `OW Bridge.exe`。无需安装；不要只复制 exe，必须保留旁边的 `resources`、DLL 等文件。**
 - 首次启动自动准备 OpenCode、扫描免费模型；每次启动只读取目录，不恢复旧检测状态、不发送模型探测。可在 OW Bridge 点击每个模型旁的“检测”单独检测，也可按 OpenCode 目录声明直接导入，无需先检测。
 - macOS 保持使用 `~/.workbuddy/models.json`。Windows 自动识别默认配置、已保存位置和 WorkBuddy 配置目录环境变量。常规路径找不到时，点击导入后用已检测可用的模型，通过独立 OpenCode 只读会话搜索 `models.json`；有效候选自动记住并导入；找到多个时，选择查找校验前最后访问时间最新的一份，不再弹窗选择。也可从 Windows 托盘“自动查找 WorkBuddy 配置…”重新查找，或“选择 WorkBuddy 配置…”手动指定；首次使用请先在 WorkBuddy 保存一个自定义模型。Windows 托盘菜单“选择 WorkBuddy 配置…”可更换位置，切换时清理旧文件中的本应用条目。不会在猜测的位置新建模型配置。
 - 后续重新扫描或检测不会改 WorkBuddy；点击“导入 WorkBuddy”更新，界面会反馈结果。
-- 关闭窗口继续在托盘运行；从托盘退出时删除本应用导入的模型，保留用户手动配置。
+- 关闭窗口继续在托盘运行；启动不修改 WorkBuddy 已有模型，点击“导入 WorkBuddy”才覆盖本应用条目；退出时删除本应用导入的模型，保留用户手动配置。
 - 图片输入、推理声明和档位、输入输出上限读取 OpenCode 目录；工具能力同样读取目录声明；模拟工具检测仅供诊断。
 - 系统代理开关支持 Mac 和 Windows 的手动 HTTP/HTTPS 代理。
 
@@ -72,7 +72,7 @@ Windows 首次启动默认读取系统 HTTP/HTTPS 代理，没有可用配置时
 
 所有扫描到的免费模型在本地 API 中公开，可以直接导入 WorkBuddy。未检测、检测超时或失败都不会禁止调用，也不会自动关闭模型的工具能力；只有 OpenCode 声明不支持工具时，才按仅对话导入。检测结果保留用于诊断，不保证实际调用成功。检测期间仍可导入和调用。语义没命中会重试一次，共用原有 60 秒预算；格式不兼容与超时不重试。
 
-模型名称是 `OC · ` 加 OpenCode 原名。导入和退出只修改 `buddyBridgeOwner` 属于本应用的条目，并在实际写入前备份；手动配置保留。配置路径默认 `~/.workbuddy/models.json`，Windows 的 `~` 对应用户目录。
+模型名称是 `OC · ` 加 OpenCode 原名。点击导入时只修改 `buddyBridgeOwner` 属于本应用的条目，并在实际写入前备份；手动配置保留。配置路径默认 `~/.workbuddy/models.json`，Windows 的 `~` 对应用户目录。
 
 图片接受 PNG/JPEG/WebP/GIF 的 base64 data URL，不接受远程图片链接或本地文件路径，整个请求上限 8 MB。图片作为附件转发，不调用 OpenCode 原生读取工具。
 
@@ -93,11 +93,17 @@ Windows 首次启动默认读取系统 HTTP/HTTPS 代理，没有可用配置时
 
 ## 验证
 
-`npm test` 覆盖协议校验、导入与退出清理、目录能力映射、图片转发、推理档位和系统代理解析。**Windows x64 portable 已由用户在 Windows 实机验证**，Windows Codex 记录包含核心服务、Electron 启动、模型扫描、隔离配置导入和 5 个模型真实 API 请求成功；v0.2.9 自动测试 105 项通过、0 跳过。这里不承诺所有模型或复杂工作流均稳定。macOS 有既有实际使用验证；Windows ARM64、Linux 仍未正式测试。产物未做商用发布签名/公证。
+`npm test` 覆盖协议校验、导入、启动保留配置与退出清理、目录能力映射、图片转发、推理档位和系统代理解析。**Windows x64 portable 已由用户在 Windows 实机验证**，Windows Codex 记录包含核心服务、Electron 启动、模型扫描、隔离配置导入和 5 个模型真实 API 请求成功；v0.2.9 自动测试 105 项通过、0 跳过。这里不承诺所有模型或复杂工作流均稳定。macOS 有既有实际使用验证；Windows ARM64、Linux 仍未正式测试。产物未做商用发布签名/公证。
 
 自动查找额外通过本地目录枚举补齐 OpenCode glob 可能漏掉的 `.workbuddy` 隐藏目录，并与模型找到的候选合并。自动查找只允许目录和文件名搜索，配置内容由本地程序验证，不交给模型。依赖可用的免费模型；查找失败仍可手动选择。已有有效旧文件时不会判断其是否已被 WorkBuddy 弃用，请通过托盘重新查找。详见 [配置查找说明](docs/config-finder.md)。
 
 关闭“使用系统代理”时，不注入 HTTP/HTTPS 代理，由 OpenCode 和系统网络正常直连，不强制 IPv6；开启时读取系统 HTTP/HTTPS 代理，没有则正常直连。系统级 VPN/TUN 仍可能接管直连流量，此开关不修改系统 DNS 或 VPN。
+
+### v0.2.19：启动不再清空或自动导入模型
+
+- 修复启动时空选择清除已有模型的问题；启动不清理、不自动导入。
+- 读取、检测和勾选不写入 WorkBuddy；检测成功自动勾选，点击导入才覆盖本应用条目。退出仍删除本应用导入的模型，保留手动配置。
+- Mac 与 Windows 使用相同逻辑。
 
 ### v0.2.18：取消检测冷却、固定模型顺序
 
