@@ -53,37 +53,30 @@ async function fixture(t, catalog) {
 }
 const catalog = () => ({ models: [{ id: 'opencode/a', name: 'A' }, { id: 'opencode/b', name: 'B' }, { id: 'opencode/c', name: 'C' }], failed: [] });
 
-test('real service stops on first 403, persists cooldown over two restarts, and confirms manual bypass', async t => {
+test('403 stops only the current batch; retries and other models need no cooldown, even after restart', async t => {
   const data = catalog(); data.gatewayErrors = { 'opencode/a': { status: 403 } };
   const f = await fixture(t, data);
-  await f.start(); assert.equal((await f.requests()).length, 0, 'No full catalog probe on startup');
-  await f.post('probe');
-  let state = await f.waitFor(s => s.probeBlockedUntil > Date.now() && !s.probe.running);
-  assert.deepEqual((await f.requests()).map(r => r.model), ['opencode/a']);
-  assert.deepEqual(state.pendingModels, ['opencode/b', 'opencode/c']);
-  assert.equal(state.modelResults['opencode/a'].status, 403);
-  assert.equal(state.modelResults['opencode/b'], undefined);
-  const until = state.probeBlockedUntil;
-  for (let i = 0; i < 2; i++) {
-    await f.stop(); state = await f.start();
-    assert.equal(state.probeBlockedUntil, until);
-    assert.deepEqual(state.modelResults, {}, 'Old failures are not current results');
-    assert.deepEqual(state.pendingModels, data.models.map(m => m.id));
-    assert.match(state.message, /运行中/);
-    await f.post('refresh'); await f.post('system-proxy', { enabled: false });
-    assert.equal((await f.requests()).length, 1);
+  await fs.writeFile(path.join(f.root, 'status.json'), JSON.stringify({probeBlockedUntil: Date.now()+1800000}));
+  await f.start(); assert.equal((await f.requests()).length, 0);
+  for (let i=0;i<2;i++) {
+    assert.equal((await f.post('probe', {model:'opencode/a'})).started, true);
+    await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.status === 403);
   }
-  assert.equal((await f.post('probe')).confirmationRequired, true);
-  assert.equal((await f.requests()).length, 1);
-  assert.equal((await f.post('probe', { confirmed: true })).started, true);
-  await f.waitFor(s => !s.probe.running && s.probeBlockedUntil > until);
   assert.equal((await f.requests()).length, 2);
+  assert.equal((await f.post('probe', {model:'opencode/b'})).started, true);
+  await f.waitFor(s => !s.probe.running && s.modelResults['opencode/b']?.ok);
+  await f.stop(); const state = await f.start();
+  assert.equal(state.probeBlockedUntil, undefined);
+  assert.deepEqual(state.modelResults, {});
+  assert.equal((await f.post('probe', {model:'opencode/a'})).started, true);
+  await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.status === 403);
+  assert.deepEqual((await f.requests()).map(r=>r.model), ['opencode/a','opencode/a','opencode/b','opencode/a']);
 });
 
 test('chat fallback 429 also stops the entire batch', async t => {
   const data = catalog(); data.chatOnly = ['opencode/a']; data.gatewayErrors = { 'opencode/a': { status: 429, chatOnly: true } };
   const f = await fixture(t, data); await f.start(); await f.post('probe');
-  const state = await f.waitFor(s => !s.probe.running && s.probeBlockedUntil > Date.now());
+  const state = await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.status === 429);
   assert.deepEqual((await f.requests()).map(r => [r.model, r.chatOnly]), [['opencode/a', false], ['opencode/a', true]]);
   assert.deepEqual(state.pendingModels, ['opencode/b', 'opencode/c']);
 });
@@ -125,7 +118,9 @@ test('a timed-out probe never removes a model from the API or import, including 
   await f.post('probe', { model: 'opencode/a' });
   const state = await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.code === 'timeout');
   assert.equal(state.availableModels.length, 3);
-  assert.equal((await f.post('import')).count, 3);
+  assert.equal((await f.post('import')).count, 0);
+  await f.post('selection', {model:'opencode/a',selected:true});
+  assert.equal((await f.post('import')).count, 1);
   await f.stop();
   assert.equal((await f.start()).availableModels.length, 3);
   assert.equal((await f.requests()).length, 1, 'Restart does not infer');
@@ -134,4 +129,21 @@ test('a timed-out probe never removes a model from the API or import, including 
   const response = await f.api('chat/completions', { model: 'OC · A', messages: [{ role: 'user', content: 'Hello' }] });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).choices[0].message.content, 'OK');
+});
+
+test('default none, successful detection selects only that model, new models stay unselected', async t => {
+ const data = catalog(); const f = await fixture(t, data);
+ await fs.writeFile(path.join(f.root, 'settings.json'), JSON.stringify({excludedModels:[]}));
+ let state = await f.start(); assert.deepEqual(state.selectedModels, []);
+ assert.equal(state.sync.count, 0);
+ await f.post('probe', {model:'opencode/a'});
+ state = await f.waitFor(s => !s.probe.running && s.modelResults['opencode/a']?.ok);
+ assert.deepEqual(state.selectedModels, ['opencode/a']);
+ assert.equal(state.sync.count, 0, 'Detection does not import');
+ assert.equal((await f.post('import')).count, 1);
+ data.models.push({id:'opencode/d',name:'D'}); await f.writeCatalog(); await f.post('refresh');
+ await f.stop(); state = await f.start();
+ assert.deepEqual(state.selectedModels, ['opencode/a']); assert.equal(state.sync.count, 1);
+ await f.post('selection', {model:'opencode/a',selected:false});
+ assert.equal((await f.post('import')).count, 0);
 });

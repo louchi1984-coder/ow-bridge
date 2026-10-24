@@ -39,7 +39,7 @@ export function createServer({ server = http.createServer(), key, selectModel, b
       }
       if (req.method === 'POST' && route === '/admin/probe') {
         const body = await readBody(req);
-        return json(res, 202, probe(body.model, { manual: true, confirmed: body.confirmed === true }));
+        return json(res, 202, probe(body.model, { manual: true }));
       }
       if (req.method === 'POST' && route === '/admin/system-proxy') return json(res, 200, await setSystemProxy((await readBody(req)).enabled));
       if (req.method === 'POST' && route === '/admin/find-config') return json(res, 200, await findConfig());

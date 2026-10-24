@@ -14,7 +14,7 @@ import { prepare, BridgeError } from './protocol.js';
 import { PROBE_TIMEOUT, probeBody, probeModel, probeFailure, formatUnsupported } from './probe.js';
 import { modelResult, withRequestMeta } from './model-status.js';
 import { atomicWrite, syncModels } from './sync.js';
-import { cachedProbe, modelFingerprint, probeGate, runProbeQueue, PROBE_COOLDOWN, PROBE_PAUSED } from './probe-policy.js';
+import { cachedProbe, modelFingerprint, runProbeQueue } from './probe-policy.js';
 
 const dataDir = process.env.BUDDY_DATA_DIR || dataDirectory();
 const port = Number(process.env.BUDDY_PORT || 41980);
@@ -34,7 +34,7 @@ const endpoint = `http://127.0.0.1:${port}/v1`;
 let models = [], runtime, binary, stopping = false, refreshing;
 let previous = {};
 try { previous = JSON.parse(await fs.readFile(path.join(dataDir, 'status.json'), 'utf8')); } catch {}
-let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], excludedModels: settings.excludedModels || [], modelResults: {}, sync: null, availableModels: [], pendingModels: [], probeBlockedUntil: Number(previous.probeBlockedUntil) || 0, probe: { running: false } };
+let state = { useSystemProxy: settings.useSystemProxy === true || (process.platform === 'win32' && settings.useSystemProxy !== false), phase: 'starting', message: '正在启动', endpoint, pid: process.pid, version: '0.2.0', opencodeVersion: null, models: [], selectedModels: settings.selectedModels || [], modelResults: {}, sync: null, availableModels: [], pendingModels: [], probe: { running: false } };
 // Serialize status writes so an older async update cannot overwrite a newer state.
 let statusWrites = Promise.resolve();
 function update(patch) {
@@ -71,7 +71,7 @@ let modelsFile = process.platform === 'win32'
   : process.env.BUDDY_MODELS_FILE || path.join(os.homedir(), '.workbuddy/models.json');
 update({ modelsFile });
 
-function syncPublished(published = publishedModels().filter(m => !(settings.excludedModels || []).includes(m.id))) {
+function syncPublished(published = publishedModels().filter(m => (settings.selectedModels || []).includes(m.id))) {
   syncWrites = syncWrites.then(async () => {
     let sync;
     if (process.env.BUDDY_NO_SYNC === '1') sync = { skipped: true, count: published.length };
@@ -100,6 +100,7 @@ async function record(model, ok, error, status, code, durationMs, source = 'requ
     return;
   }
   if (ok) validated.add(model); else validated.delete(model);
+  if (ok && source === 'probe') await selectModel(model, true);
   update({ lastRequest: result, ...(model ? { modelResults: { ...state.modelResults, [model]: result }, pendingModels: state.pendingModels.filter(id => id !== model) } : {}), ...captured });
   update({ availableModels: usableModels().map(m => m.id) });
 }
@@ -136,11 +137,9 @@ function noteActivity(progress) {
 }
 let probing = false, probeTask;
 const probeAbort = new AbortController();
-function startProbes(modelID, { manual = false, confirmed = false, force = false } = {}) {
+function startProbes(modelID, { manual = false, force = false } = {}) {
   if (stopping || refreshing || configSearch) throw new Error('请等待模型读取或配置查找完成');
   if (probing) return { started: false, message: '检测正在进行' };
-  const blocked = probeGate(state.probeBlockedUntil, { manual, confirmed });
-  if (blocked) { update({ message: PROBE_PAUSED }); return blocked; }
   const candidates = modelID ? models.filter(m => m.id === modelID) : models;
   if (modelID && !candidates.length) throw new Error('模型不在当前目录中');
   const selected = candidates.filter(m => manual || force || !cachedProbe(m, state.modelResults[m.id], previous.models?.find(old => old.id === m.id)));
@@ -158,8 +157,6 @@ function startProbes(modelID, { manual = false, confirmed = false, force = false
         },
         onBlocked: async error => {
           console.log(`${new Date().toISOString()} Model detection paused: HTTP ${error.status}; ${state.probe.pending.length} models remain pending`);
-          update({ probeBlockedUntil: Date.now() + PROBE_COOLDOWN, message: PROBE_PAUSED });
-          await statusWrites;
         },
         probe: async model => {
           update({ probe: { ...state.probe, current: model.id } });
@@ -198,7 +195,7 @@ function startProbes(modelID, { manual = false, confirmed = false, force = false
       });
     } finally {
       probing = false;
-      update({ probe: { running: false }, ...(state.probeBlockedUntil > Date.now() ? {} : { message: `运行中 · ${models.length} 个免费模型` }) });
+      update({ probe: { running: false }, message: `运行中 · ${models.length} 个免费模型` });
     }
   })().catch(e => console.error('Model detection failed:', e.message));
   return { started: true };
@@ -310,12 +307,12 @@ async function findConfig(afterProbe = false) {
 async function selectModel(model, selected) {
   if (stopping || refreshing || configSearch || state.phase !== 'ready') throw new Error('请等待服务就绪后选择模型');
   if (typeof selected !== 'boolean' || !models.some(m => m.id === model)) throw new Error('无效的模型选择');
-  const excluded = new Set(settings.excludedModels || []);
-  if (selected) excluded.delete(model); else excluded.add(model);
-  const next = { ...settings, excludedModels: [...excluded] };
+  const selection = new Set(settings.selectedModels || []);
+  if (selected) selection.add(model); else selection.delete(model);
+  const next = { ...settings, selectedModels: [...selection] };
   await atomicWrite(settingsFile, JSON.stringify(next));
-  settings = next; update({ excludedModels: next.excludedModels });
-  return { excludedModels: next.excludedModels };
+  settings = next; update({ selectedModels: next.selectedModels });
+  return { selectedModels: next.selectedModels };
 }
 
 async function importModels(selectedFile) {
@@ -391,7 +388,7 @@ try {
   if (!agents.some(a => a.name === 'buddy-bridge')) throw new Error('Dedicated approval-gated agent missing');
   await refresh();
   // Startup reads the catalog only. Detection is explicitly initiated by the user.
-  // Keep the cooldown for manual confirmation, without presenting old failures as current.
+  // Old failures are not presented as current results.
   await syncPublished();
   console.log(`OW Bridge ready at ${endpoint}; ${models.length} free models`);
 } catch (e) { update({ phase: 'error', message: e.message }); if (!runtime) await shutdown(1); }

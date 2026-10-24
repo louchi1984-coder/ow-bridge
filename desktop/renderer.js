@@ -20,16 +20,16 @@ function timing(id) {
   return `最近${r.source === 'probe' ? '检测' : '调用'} · ${r.ok ? '响应' : '失败'}耗时 ${duration}`;
 }
 function renderModels() {
-  const signature = JSON.stringify([state.models, state.modelResults, state.probe, state.pendingModels, state.availableModels, state.activity, state.excludedModels, state.actionBusy, pendingAction, selected]);
+  const signature = JSON.stringify([state.models, state.modelResults, state.probe, state.pendingModels, state.availableModels, state.activity, state.selectedModels, state.actionBusy, pendingAction, selected]);
   if (signature === lastModels) return; lastModels = signature;
   const scroll = $('models').scrollTop;
   const focused = document.activeElement?.dataset?.model;
   $('models').replaceChildren();
-  const models = [...(state.models || [])].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const models = [...(state.models || [])].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   for (const model of models) {
     const row = element('div', 'model' + (selected === model.id ? ' selected' : '')); row.dataset.model = model.id;
     const choose = element('input', 'model-check'); choose.type = 'checkbox';
-    choose.checked = !!state.availableModels?.includes(model.id) && !(state.excludedModels || []).includes(model.id);
+    choose.checked = !!state.availableModels?.includes(model.id) && (state.selectedModels || []).includes(model.id);
     choose.disabled = !!(pendingAction || state.actionBusy || state.configSearch?.running || state.phase !== 'ready' || !state.availableModels?.includes(model.id));
     choose.setAttribute('aria-label', `导入 OC · ${model.name}`);
     choose.onclick = event => event.stopPropagation();
@@ -103,10 +103,9 @@ async function run(name, value) {
   try {
     const response = await window.buddy.action(name, value);
     if (!response.ok) throw new Error(response.error);
-    if (name === 'probe' && response.result.canceled) feedback('已取消检测，继续冷却。');
     if (name === 'probe' && response.result.message) feedback(response.result.message);
     if (name === 'update-runtime') feedback(response.result.changed ? `OpenCode 已更新至 ${response.result.version}，已重新读取模型，可手动检测。` : `OpenCode ${response.result.version} 已是最新，无需更新。`);
-    if (name === 'selection') { state.excludedModels = response.result.excludedModels; feedback('选择已保存，点击导入 WorkBuddy 后生效。'); }
+    if (name === 'selection') { state.selectedModels = response.result.selectedModels; feedback('选择已保存，点击导入 WorkBuddy 后生效。'); }
     if (name === 'import') {
       const r = response.result;
       if (r.canceled) { feedback('已取消导入，配置未更改。'); return; }

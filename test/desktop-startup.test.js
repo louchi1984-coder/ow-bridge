@@ -38,8 +38,8 @@ test('early activation and second-instance events wait for Electron readiness', 
   assert.equal(shown, 2);
 });
 
-test('manual probe cooldown asks confirmation in the shared desktop action, cancel sends no override', async () => {
-  for (const responseChoice of [0, 1]) {
+test('manual model detection sends a single request without a confirmation dialog', async () => {
+  for (const attempt of [0, 1]) {
     const app = Object.assign(new EventEmitter(), {
       setName() {}, setAppUserModelId() {}, requestSingleInstanceLock: () => true,
       isReady: () => false, whenReady: () => new Promise(() => {}), quit() {},
@@ -47,22 +47,21 @@ test('manual probe cooldown asks confirmation in the shared desktop action, canc
     const bodies = []; let dialogs = 0;
     const context = {
       require: name => name === 'electron' ? { app, dialog: { showMessageBox: async options => {
-        dialogs++; assert.equal(options.cancelId, 0); assert.equal(options.defaultId, 0);
-        return { response: responseChoice };
+        dialogs++; assert.fail('Detection must not ask for cooldown confirmation');
       } } } : name === 'node:fs/promises' ? { readFile: async file => {
         if (file.endsWith('api-key')) return 'test-key'; throw new Error('No status update');
       } } : require(name),
       fetch: async (_, options) => {
         bodies.push(JSON.parse(options.body));
-        return { ok: true, json: async () => bodies.length === 1 ? { started: false, confirmationRequired: true } : { started: true } };
+        return { ok: true, json: async () => ({ started: true }) };
       },
       __dirname: path.dirname(fileURLToPath(entry)), process, clearInterval, setTimeout, AbortSignal,
     };
     vm.createContext(context);
     vm.runInContext(fs.readFileSync(entry, 'utf8') + '\nstate = { phase: "ready" }; dataDir = "/tmp/ow-dialog-test"; globalThis.invokeProbe = () => action("probe", { model: "opencode/a" });', context);
     const result = await context.invokeProbe();
-    assert.equal(dialogs, 1);
-    assert.deepEqual(bodies, responseChoice ? [{ model: "opencode/a", confirmed: false }, { model: "opencode/a", confirmed: true }] : [{ model: "opencode/a", confirmed: false }]);
-    assert.equal(responseChoice ? result.started : result.canceled, true);
+    assert.equal(dialogs, 0);
+    assert.deepEqual(bodies, [{ model: "opencode/a" }]);
+    assert.equal(result.started, true);
   }
 });

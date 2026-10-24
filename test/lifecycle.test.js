@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { OWNER } from '../src/sync.js';
 
-test('startup imports catalog models without probing; repeated checks and reads require import; exit removes owned models', async () => {
+test('startup selects nothing and successful probes select models without importing; repeated checks and reads require import; exit removes owned models', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buddy-lifecycle-'));
   const config = path.join(root, 'models.json');
   const manual = { id: 'personal', apiKey: 'keep' };
@@ -39,12 +39,12 @@ test('startup imports catalog models without probing; repeated checks and reads 
     throw new Error('Lifecycle timeout: ' + logs);
   }
   try {
-    await waitFor(s => s.phase === 'ready' && !s.probe.running && s.sync?.count === 2);
+    await waitFor(s => s.phase === 'ready' && !s.probe.running && s.sync?.count === 0);
     await assert.rejects(fs.stat(path.join(root, 'requests.jsonl')), { code: 'ENOENT' });
-    const initial = await fs.readFile(config, 'utf8');
+    let initial = await fs.readFile(config, 'utf8');
     const backups = async () => (await fs.readdir(root)).filter(name => name.endsWith('.bak')).length;
-    assert.equal(await backups(), 2, 'One startup cleanup and one import after the full batch');
-    assert.deepEqual(JSON.parse(initial).map(m => m.id), ['personal', 'OC · A', 'OC · B']);
+    assert.equal(await backups(), 1, 'Startup removes old managed entries without importing defaults');
+    assert.deepEqual(JSON.parse(initial).map(m => m.id), ['personal']);
     const key = (await fs.readFile(path.join(root, 'api-key'), 'utf8')).trim();
     async function post(route, payload = {}) {
       const response = await fetch(`http://127.0.0.1:${port}/admin/${route}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -56,6 +56,10 @@ test('startup imports catalog models without probing; repeated checks and reads 
       assert.equal((await response.json()).choices[0].message.content, expected);
       catalog.checkTranslator = false; await writeCatalog();
     }
+    await post('selection', {model:'opencode/a',selected:true});
+    await post('selection', {model:'opencode/b',selected:true});
+    await post('import');
+    initial = await fs.readFile(config, 'utf8');
     await checkTranslator('none');
     catalog.formatError = true; await writeCatalog();
     const failedResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'OC · A', messages: [{ role: 'user', content: 'Hello' }] }) });
@@ -107,7 +111,7 @@ test('startup imports catalog models without probing; repeated checks and reads 
     assert.equal(imported[2].supportsToolCall, true, 'Probe result must not override catalog capabilities');
     await post('selection', { model: 'opencode/b', selected: false });
     assert.equal(await fs.readFile(config, 'utf8'), JSON.stringify(imported, null, 2) + '\n', 'Selection does not write WorkBuddy');
-    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8')).excludedModels, ['opencode/b']);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8')).selectedModels, ['opencode/a']);
     await post('import');
     assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).map(m => m.id), ['personal', 'OC · A']);
     await post('selection', { model: 'opencode/a', selected: false });
